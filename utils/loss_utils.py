@@ -12,6 +12,8 @@
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
+import torchvision.models as models
+import torch.nn as nn
 from math import exp
 
 def l1_loss(network_output, gt):
@@ -19,6 +21,41 @@ def l1_loss(network_output, gt):
 
 def l2_loss(network_output, gt):
     return ((network_output - gt) ** 2).mean()
+
+def l1_loss_exp(network_output, gt):
+    pred_log = torch.log(1+network_output)
+    gt_log = torch.log(1+gt)
+    return torch.abs((pred_log-gt_log)).mean()
+
+class PerceptualLoss(nn.Module):
+    def __init__(self, device='cuda'):
+        super(PerceptualLoss, self).__init__()
+        vgg = models.vgg19(pretrained=True).features
+        vgg = vgg.to(device).eval()
+        self.features = nn.Sequential()
+        self.device = device
+
+        # Define the layers to use for feature extraction
+        layer_names = ['0', '5', '10', '19', '28']
+        for name, layer in vgg._modules.items():
+            self.features.add_module(name, layer)
+            if name in layer_names:
+                break
+
+    def forward(self, network_output, gt):
+        # Normalize the input images
+        # x = (x + 1.0) / 2.0
+        # y = (y + 1.0) / 2.0
+        pred_log = torch.log(1+network_output)
+        gt_log = torch.log(1+gt)
+        # Extract features from the intermediate layers
+        features_x = self.features(pred_log)
+        features_y = self.features(gt_log)
+
+        # Compute the perceptual loss as the L1 distance between features
+        loss = F.l1_loss(features_x, features_y)
+
+        return loss
 
 def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])

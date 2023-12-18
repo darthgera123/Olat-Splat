@@ -11,6 +11,7 @@ from pathlib import Path
 from plyfile import PlyData, PlyElement
 from utils.sh_utils import SH2RGB
 from scene.gaussian_model import BasicPointCloud
+from imageio.v2 import imread,imwrite
 
 class CameraInfo(NamedTuple):
     uid: int
@@ -25,6 +26,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    light_dir: np.array
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -187,7 +189,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
         frames = contents["frames"]
         for idx, frame in enumerate(frames):
             fovx = frame["camera_angle_x"]
-            cam_name = os.path.join(path, frame["file_path"] + '.png')
+            cam_name = os.path.join(path, frame["file_path"] + '.exr')
             c2w = np.array(frame["transform_matrix"])
             matrix = np.linalg.inv(c2w)
             
@@ -195,21 +197,18 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             T = matrix[:3, 3]
             image_path = os.path.join(path, cam_name)
             image_name = Path(cam_name).stem
-            image = Image.open(image_path)
-
-            im_data = np.array(image.convert("RGBA"))
-
-            bg = np.array([1,1,1]) if white_background else np.array([0, 0, 0])
-
-            norm_data = im_data / 255.0
-            arr = norm_data[:,:,:3] * norm_data[:, :, 3:4] + bg * (1 - norm_data[:, :, 3:4])
-            image = Image.fromarray(np.array(arr*255.0, dtype=np.byte), "RGB")
-
-            fovy = focal2fov(fov2focal(fovx, image.size[0]), image.size[1])
             
+            
+            image = np.power(np.clip(imread(image_path),0,None),0.45)
+            image = np.clip(imread(image_path),0,None)
+            imh = int(frame['h'])
+            imw = int(frame['w'])
+
+            fovy = focal2fov(fov2focal(fovx, imw), imh)
+            # fovy = frame["camera_angle_y"]
             FovY = fovy 
             FovX = fovx
-
+            
             try:
                 Cy = frame['cy']
                 Cx = frame['cx']
@@ -217,8 +216,11 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
                 Cy = contents['cy']
                 Cx = contents['cx']
 
+            light_dir = np.asarray(frame['light_direction'])
+
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX,Cx =Cx,Cy=Cy, image=image,
-                            image_path=image_path, image_name=image_name, width=image.size[0], height=image.size[1]))
+                            image_path=image_path, image_name=image_name, width=imw, height=imh,
+                            light_dir=light_dir))
             
     return cam_infos
 
@@ -258,7 +260,7 @@ def readNerfSyntheticInfo(path, white_background, eval, extension=".png"):
                            ply_path=ply_path)
     return scene_info
 
-sceneLoadTypeCallbacks = {
+sceneLoadTypeCallbacks_exr_light = {
     "Colmap": readColmapSceneInfo,
     "Blender" : readNerfSyntheticInfo
 }

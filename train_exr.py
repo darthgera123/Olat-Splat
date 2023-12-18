@@ -15,7 +15,7 @@ from random import randint
 from utils.loss_utils import l1_loss, ssim, l1_loss_exp,PerceptualLoss
 from gaussian_renderer import render, network_gui
 import sys
-from scene import Scene_png,Scene_exr,GaussianModel,GaussianModel_exr
+from scene import Scene_exr,GaussianModel,GaussianModel_exr
 from utils.general_utils import safe_state
 import uuid
 from tqdm import tqdm
@@ -27,6 +27,9 @@ try:
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
+def tonemap(img):
+    return torch.pow(img+1e-5,0.45)
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
@@ -49,7 +52,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
     percep = PerceptualLoss()
-    
+    # gaussians.freeze_pos()
     for iteration in range(first_iter, opt.iterations + 1):        
 
         iter_start.record()
@@ -74,10 +77,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         
-        # Ll1 = l1_loss(image, gt_image)
+        L1 = l1_loss(tonemap(image), tonemap(gt_image))
         Ll2 = percep(image,gt_image)
         Ll1 = l1_loss_exp(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) 
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(tonemap(image), tonemap(gt_image))) 
         loss.backward()
 
         iter_end.record()

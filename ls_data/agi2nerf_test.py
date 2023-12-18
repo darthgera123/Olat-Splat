@@ -50,8 +50,10 @@ def central_point(out,transform_matrix_pcl):
 	totp /= totw
 	print(totp) # the cameras are looking at totp
 	for f in out["frames"]:
-		f["transform_matrix"][0:3,3] -= totp
+		# f["transform_matrix"][0:3,3] -= totp
 		f["transform_matrix"] = f["transform_matrix"].tolist()
+	center_origin = np.asarray([0.5,0.1,0.5])
+	transform_matrix_pcl[0:3, 3] -= center_origin[0:3]
 	transform_matrix_pcl[0:3, 3] -= totp[0:3]
 	return out,transform_matrix_pcl
 
@@ -126,6 +128,38 @@ def parse_cameras(xml_file,img_path,scale=1):
                     'camera_angle_y': camera_angle_y,
                     'aabb_scale': 16
                 }
+
+            chunk = root[0]  
+            components = chunk.find("components")
+            component_dict = {}
+            if components is not None:
+                for component in components:
+                    transform = component.find("transform")
+                    if transform is not None:
+                        rotation = transform.find("rotation")
+                        if rotation is None:
+                            r = np.eye(3)
+                        else:
+                            assert isinstance(rotation.text, str)
+                            r = np.array([float(x) for x in rotation.text.split()]).reshape((3, 3))
+                        translation = transform.find("translation")
+                        if translation is None:
+                            t = np.zeros(3)
+                        else:
+                            assert isinstance(translation.text, str)
+                            t = np.array([float(x) for x in translation.text.split()])
+                        scale = transform.find("scale")
+                        if scale is None:
+                            s = 1.0
+                        else:
+                            assert isinstance(scale.text, str)
+                            s = float(scale.text)
+
+                        m = np.eye(4)
+                        m[:3, :3] = r
+                        m[:3, 3] = t * s
+                        # m[:3, 3] = t
+                        component_dict[component.get("id")] = m
             frames = list()
             for frame in root[0][2]:
                 current_frame = dict()
@@ -144,7 +178,11 @@ def parse_cameras(xml_file,img_path,scale=1):
                 # current_frame.update({"bg_path": bgPath})
                 # current_frame.update({"sharpness":sharpness(imagePath)})
                 matrix_elements = [float(i) for i in frame[0].text.split()]
+				
                 transform_matrix = np.array([[matrix_elements[0], matrix_elements[1], matrix_elements[2], matrix_elements[3]], [matrix_elements[4], matrix_elements[5], matrix_elements[6], matrix_elements[7]], [matrix_elements[8], matrix_elements[9], matrix_elements[10], matrix_elements[11]], [matrix_elements[12], matrix_elements[13], matrix_elements[14], matrix_elements[15]]])
+                component_id = frame.get("component_id")
+                if component_id in component_dict:
+                    transform_matrix = component_dict[component_id] @ transform_matrix
                 # transform = np.array([float(x) for x in camera.find("transform").text.split()]).reshape((4, 4)) 
                 #swap axes
                 transform_matrix = transform_matrix[[2,0,1,3],:]
@@ -156,7 +194,8 @@ def parse_cameras(xml_file,img_path,scale=1):
             out.update({"frames": frames})
 			
     return out
-        
+
+       
 
 def create_alpha(img_path,mask_path,alpha_path,scale):
 	# assuming all images and mask are following same naming convention. Breaks if it doesnt
@@ -206,12 +245,20 @@ if __name__ == '__main__':
         create_alpha(args.img_path,args.mask_path,img_folder,args.scale)
 	
     transforms = parse_cameras(args.xml_in,img_folder,args.scale)
-    pcd = o3d.io.read_point_cloud(args.points_in)
+    pcd = o3d.io.read_point_cloud(args.points_in)   
 	
+    
+    print(pcd)
+
     transform_matrix_pcl = np.eye(4,dtype='float32')
+    
+    
     transform_matrix_pcl = transform_matrix_pcl[[2,0,1,3],:]
+    
     transforms,transforms_pcd = central_point(transforms,transform_matrix_pcl)
     pcd.transform(transforms_pcd)
+
+    print(transforms_pcd)
 	
     point_cloud_out = os.path.join(args.output_dir,args.points_out)
     o3d.io.write_point_cloud(point_cloud_out, pcd)
