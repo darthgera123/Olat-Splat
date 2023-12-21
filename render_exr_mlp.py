@@ -35,7 +35,7 @@ def exr2png(img):
     return np_img.astype('uint8')
 
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, specular):
-    render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
+    render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders_color")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     # depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
     # acc_path = os.path.join(model_path, name, "ours_{}".format(iteration), "acc")
@@ -73,9 +73,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_render))
         imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_gt))
+        
         # torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
+        del gt,rendering,np_render,np_gt
 
 
 def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, skip_train: bool, skip_test: bool,

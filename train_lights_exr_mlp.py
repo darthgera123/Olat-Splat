@@ -82,7 +82,9 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         render_pkg = render_spec(viewpoint_cam, gaussians, pipe, background,mlp_color=mlp_color)
         image = render_pkg["render"]
         # Loss
+        
         gt_image = viewpoint_cam.original_image.cuda()
+        # gt_image = gt_image.to('cuda')
         # Ll1 = l1_loss(image, gt_image)
         Ll1 = l1_loss_exp(image, gt_image)
         # L2 = percep(image,gt_image)
@@ -90,7 +92,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         loss.backward()
         
         iter_end.record()
-        del gt_image
+        # del gt_image
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log

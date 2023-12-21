@@ -16,7 +16,9 @@ class NeRFNetwork(nn.Module):
                  hidden_dim=64,
                  geo_feat_dim=15,
                  num_layers_color=3,
-                 hidden_dim_color=64,               
+                 hidden_dim_color=64,
+                 num_layers_vis=4,
+                 hidden_dim_vis=4,               
                  bound=1,
                  **kwargs,
                  ):
@@ -92,6 +94,25 @@ class NeRFNetwork(nn.Module):
         self.color_net = nn.ModuleList(color_net)
 
         # background network
+
+        #V5
+        self.num_layers_vis = num_layers_vis        
+        self.hidden_dim_vis = hidden_dim_vis
+        vis_net = []
+        for l in range(num_layers_vis):
+            if l == 0:
+                in_dim = self.in_dim_light + self.in_dim
+            else:
+                in_dim = hidden_dim
+            
+            if l == num_layers - 1:
+                out_dim = 1  # 1 binary masking
+            else:
+                out_dim = hidden_dim
+            
+            vis_net.append(nn.Linear(in_dim, out_dim, bias=False))
+
+        self.vis_net = nn.ModuleList(vis_net)
         
 
     def forward(self, x, d, lig):
@@ -132,6 +153,22 @@ class NeRFNetwork(nn.Module):
         #         h = F.relu(h, inplace=True)
 
         # V4
+        # h = torch.cat([h_x,light,d], dim=-1)
+        # for l in range(self.num_layers_color):
+        #     if l == 1:
+        #         h = torch.cat([h,geo_feat],dim=-1)
+        #     h = self.color_net[l](h)
+            
+        #     if l != self.num_layers_color - 1:
+        #         h = F.relu(h, inplace=True)
+        
+        # sigmoid activation for rgb
+        # color = torch.sigmoid(h)
+        # color = torch.relu(h)
+        # color = self.leakyrelu(h)
+        # color = self.tanh(h)
+
+        # V5
         h = torch.cat([h_x,light,d], dim=-1)
         for l in range(self.num_layers_color):
             if l == 1:
@@ -141,14 +178,20 @@ class NeRFNetwork(nn.Module):
             if l != self.num_layers_color - 1:
                 h = F.relu(h, inplace=True)
         
-        # sigmoid activation for rgb
-        # color = torch.sigmoid(h)
         color = torch.relu(h)
-        # color = self.leakyrelu(h)
-        # color = self.tanh(h)
+        
+        h1 = torch.cat([h_x,light], dim=-1)
+        for l in range(self.num_layers):
+            h1 = self.vis_net[l](h1)
+            if l != self.num_layers - 1:
+                h1 = F.relu(h1, inplace=True)
+        
+        vis = torch.sigmoid(h1)
 
+        col = color*vis
+        col = col
         # return sigma, color
-        return color
+        return col
 
     def density(self, x):
         # x: [N, 3], in [-bound, bound]
@@ -209,6 +252,7 @@ class NeRFNetwork(nn.Module):
             {'params': self.sigma_net.parameters(), 'lr': lr},
             {'params': self.encoder_dir.parameters(), 'lr': lr},
             {'params': self.color_net.parameters(), 'lr': lr}, 
+            {'params': self.vis_net.parameters(), 'lr': lr}
         ]
         
         
