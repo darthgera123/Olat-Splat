@@ -13,6 +13,7 @@ import os
 import torch
 from random import randint
 from utils.loss_utils import l1_loss, ssim, l1_loss_exp,PerceptualLoss
+from utils.loss_utils import predicted_normal_loss,delta_normal_loss,zero_one_loss
 from gaussian_renderer import render, network_gui
 import sys
 from scene import Scene_exr,GaussianModel,GaussianModel_exr
@@ -35,6 +36,8 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter = 0
     tb_writer = prepare_output_and_logger(dataset)
     gaussians = GaussianModel_exr(dataset.sh_degree)
+    if pipe.brdf:
+        gaussians.brdf = True
     scene = Scene_exr(dataset, gaussians)
     gaussians.training_setup(opt)
     if checkpoint:
@@ -63,6 +66,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         if iteration % 1000 == 0:
             gaussians.oneupSHdegree()
 
+        if pipe.brdf:
+            gaussians.set_requires_grad("normal", state=iteration >= opt.normal_reg_from_iter)
+            gaussians.set_requires_grad("normal2", state=iteration >= opt.normal_reg_from_iter)
+
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
@@ -73,14 +80,24 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             pipe.debug = True
         render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-
+        losses_extra = {}
+        if pipe.brdf and iteration > opt.normal_reg_from_iter:
+            if iteration<opt.normal_reg_util_iter:
+                losses_extra['predicted_normal'] = predicted_normal_loss(render_pkg["normal"], render_pkg["normal_ref"], render_pkg["alpha"])
+            losses_extra['zero_one'] = zero_one_loss(render_pkg["alpha"])
+            # print(render_pkg.keys())
+            if "delta_normal" not in render_pkg.keys() and opt.lambda_delta_reg>0: assert()
+            if "delta_normal" in render_pkg.keys():
+                losses_extra['delta_reg'] = delta_normal_loss(render_pkg["delta_normal"], render_pkg["alpha"])
         # Loss
         gt_image = viewpoint_cam.original_image.cuda()
         
-        L1 = l1_loss(tonemap(image), tonemap(gt_image))
-        Ll2 = percep(image,gt_image)
+        # Ll1 = l1_loss(tonemap(image), tonemap(gt_image))
+        # Ll2 = percep(image,gt_image)
         Ll1 = l1_loss_exp(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(tonemap(image), tonemap(gt_image))) 
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(tonemap(image), tonemap(gt_image)))
+        for k in losses_extra.keys():
+            loss += getattr(opt, f'lambda_{k}')* losses_extra[k] 
         loss.backward()
 
         iter_end.record()

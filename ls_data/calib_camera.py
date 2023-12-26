@@ -132,7 +132,8 @@ def central_point(out,transform_matrix_pcl):
 def create_alpha(img_path,mask_path,alpha_path,scale,ext='exr'):
 	# assuming all images and mask are following same naming convention. Breaks if it doesnt
     images = sorted(os.listdir(img_path))
-    N = len(images)
+    masks = sorted(os.listdir(mask_path))
+    N = len(masks)
     for i in tqdm(range(0,N)):
         mask = cv2.imread(os.path.join(mask_path,f'Cam_{str(i).zfill(2)}.jpg'),cv2.IMREAD_GRAYSCALE)
         h,w = mask.shape
@@ -158,7 +159,7 @@ def create_alpha(img_path,mask_path,alpha_path,scale,ext='exr'):
      
 		
 
-def parse_cameras(calib,path,imw,imh):
+def parse_cameras(calib,path,mask_path,imw,imh):
     intr,extr = read_calib(calib)
     transforms = {}
     transforms["aabb_scale"] = 16.0
@@ -176,6 +177,7 @@ def parse_cameras(calib,path,imw,imh):
         frame['transform_matrix'] = extr[idx][[2,0,1,3],:]
         # frame['transform_matrix'] = extr[idx]
         frame['file_path'] = os.path.join(path,f'Cam_{str(idx).zfill(2)}')
+        frame['mask_path'] = os.path.join(mask_path,f'Cam_{str(idx).zfill(2)}.jpg')
         frames.append(frame)
     transforms["frames"] = frames
     return transforms
@@ -190,7 +192,7 @@ if __name__ == '__main__':
         create_alpha(args.img_path,args.mask_path,img_folder,args.scale,args.ext)
 
     sensor_x,sensor_y = 10.0000, 17.777
-    transforms = parse_cameras(args.calib,img_folder,args.imw,args.imh)
+    transforms = parse_cameras(args.calib,img_folder,args.mask_path,args.imw,args.imh)
     
     pcd = o3d.io.read_point_cloud(args.points_in)
     transform_matrix_pcl = np.eye(4,dtype='float32')

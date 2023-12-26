@@ -239,7 +239,7 @@ class Scene_exr_light:
                                                            "point_cloud.ply"))
         elif self.load_init:
             self.gaussians.load_ply(os.path.join(self.load_init))
-            self.gaussians.freeze_positions()
+            # self.gaussians.freeze_positions()
             print("Load Initialized point cloud")
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)

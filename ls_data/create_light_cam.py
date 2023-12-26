@@ -38,7 +38,7 @@ def create_alpha(img_path,mask_path,alpha_path,scale,num_lights,num_cameras,ext=
     images = sorted(os.listdir(img_path))
     N = num_cameras
 
-    for i in tqdm(range(20,N)):
+    for i in tqdm(range(0,N)):
         mask = cv2.imread(os.path.join(mask_path,f'Cam_{str(i).zfill(2)}.jpg'),cv2.IMREAD_GRAYSCALE)
         h,w = mask.shape
         nh,nw = int(h/scale),int(w/scale)
