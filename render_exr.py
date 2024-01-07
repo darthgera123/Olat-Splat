@@ -41,13 +41,14 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(gts_path, exist_ok=True)
     cyan = torch.tensor([[0,1,1]]).cuda().reshape((3,1,1))
     yellow = torch.tensor([[1,1,0]]).cuda().reshape((3,1,1))
+    times = 0 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")): 
         start_time = time.time()
         rendering = render(view, gaussians, pipeline, background)["render"]
         end_time = time.time()
         execution_time = end_time - start_time
-
-        print(f"The function took {execution_time} seconds to execute.")
+        times += execution_time
+        
         gt = view.original_image[0:3, :, :]
         np_render = torch2numpy(rendering)
         np_gt = torch2numpy(gt)
@@ -59,7 +60,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_render))
         imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_gt))
-
+    print(f"The function took {times/len(views)} seconds to execute.")
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():
         gaussians = GaussianModel_exr(dataset.sh_degree)

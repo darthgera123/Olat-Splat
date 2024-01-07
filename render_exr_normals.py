@@ -14,7 +14,7 @@ from scene import Scene, Scene_exr
 import os
 from tqdm import tqdm
 from os import makedirs
-from gaussian_renderer import render
+from gaussian_renderer import render_normal
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
@@ -57,13 +57,14 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     makedirs(alpha_path, exist_ok=True)
     cyan = torch.tensor([[0,1,1]]).cuda().reshape((3,1,1))
     yellow = torch.tensor([[1,1,0]]).cuda().reshape((3,1,1))
+    times = 0
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")): 
         start_time = time.time()
-        results = render(view, gaussians, pipeline, background)
+        results = render_normal(view, gaussians, pipeline, background)
         end_time = time.time()
         execution_time = end_time - start_time
 
-        print(f"The function took {execution_time} seconds to execute.")
+        times += execution_time
         gt = view.original_image[0:3, :, :]
         
         np_gt = torch2numpy_pow(gt)
@@ -97,11 +98,12 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         # imwrite(os.path.join(normal_ref_path, '{0:05d}'.format(idx) + ".png"),normal_ref)
         # imwrite(os.path.join(normal_axis_path, '{0:05d}'.format(idx) + ".png"),normal_axis)
         # imwrite(os.path.join(normal_path, '{0:05d}'.format(idx) + ".png"),normal)
-
+    print(f"The function took {times/len(views)} seconds to execute.")
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():
         gaussians = GaussianModel_exr(dataset.sh_degree)
+        
         if pipeline.brdf:
             gaussians.brdf = True
         scene = Scene_exr(dataset, gaussians, load_iteration=iteration, shuffle=False)

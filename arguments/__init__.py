@@ -49,14 +49,15 @@ class ModelParams(ParamGroup):
         self.sh_degree = 3
         self._source_path = ""
         self._model_path = ""
+        self.env_map_path = ""
         self._images = "images"
         self._resolution = -1
         self._white_background = False
         self.data_device = "cuda"
         self.eval = False
-        self.brdf_dim = 0
+        self.brdf_dim = -1
         self.brdf_mode = "envmap"
-        self.brdf_envmap_res = 64
+        self.brdf_envmap_res = 512
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -71,6 +72,14 @@ class PipelineParams(ParamGroup):
         self.debug = False
         self.brdf = False
         super().__init__(parser, "Pipeline Parameters")
+    
+    def extract(self, args):
+        g = super().extract(args)
+        # g.brdf = args.brdf_dim>=0
+        if g.brdf:
+            g.convert_SHs_python = True
+        g.brdf_mode = args.brdf_mode
+        return g
 
 class OptimizationParams(ParamGroup):
     def __init__(self, parser):

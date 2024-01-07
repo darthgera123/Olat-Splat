@@ -14,7 +14,7 @@ import torch
 from random import randint
 from utils.loss_utils import l1_loss, ssim, l1_loss_exp,PerceptualLoss
 from utils.loss_utils import predicted_normal_loss,delta_normal_loss,zero_one_loss
-from gaussian_renderer import render, network_gui
+from gaussian_renderer import render, network_gui, render_normal
 import sys
 from scene import Scene_exr,GaussianModel,GaussianModel_exr
 from utils.general_utils import safe_state
@@ -56,6 +56,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
     first_iter += 1
     percep = PerceptualLoss()
     # gaussians.freeze_pos()
+    gaussians._xyz = gaussians._xyz.detach()
     for iteration in range(first_iter, opt.iterations + 1):        
 
         iter_start.record()
@@ -78,7 +79,10 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+        if pipe.brdf:
+            render_pkg = render_normal(viewpoint_cam, gaussians, pipe, background)
+        else:
+            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         losses_extra = {}
         if pipe.brdf and iteration > opt.normal_reg_from_iter:
@@ -112,7 +116,7 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
                 progress_bar.close()
 
             # Log and save
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render, (pipe, background))
+            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, render_normal, (pipe, background))
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration)

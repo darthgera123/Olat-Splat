@@ -9,16 +9,18 @@ import cv2
 from imageio.v2 import imread,imwrite
 import math
 import open3d as o3d
-
+from plyfile import PlyData, PlyElement
 
 
 def parse_args():
     parser =  ArgumentParser(description="convert calib file to nerf format transforms.json")
     parser.add_argument("--calib", default="", help="specify calib file location")
     parser.add_argument("--output", default="transforms.json", help="output path")
-    parser.add_argument("--points_out", default="points3d.ply", help="output point cloud")
     parser.add_argument("--create_alpha",action='store_true', help="create_images")
+    parser.add_argument("--create_points",action='store_true', help="create_point_cloud")
+    parser.add_argument("--create_lights",action='store_true', help="create_lights")
     parser.add_argument("--points_in", default="points3d.ply", help="location of folder with images")
+    parser.add_argument("--obj", default="points3d.ply", help="loocation of obj_file")
     parser.add_argument("--imh", default=1440,type=int, help="height of image")
     parser.add_argument("--imw", default=810,type=int, help="width of image")
     parser.add_argument("--img_path", default="images/", help="location of folder with images")
@@ -182,6 +184,105 @@ def parse_cameras(calib,path,mask_path,imw,imh):
     transforms["frames"] = frames
     return transforms
 
+def gentritex(v, vt, vi, vti, texsize):
+    """Create 3 texture maps containing the vertex indices, texture vertex
+    indices, and barycentric coordinates"""
+    vt = np.array(vt, dtype=np.float32)
+    vi = np.array(vi, dtype=np.int32)
+    vti = np.array(vti, dtype=np.int32)
+    ntris = vi.shape[0]
+
+    texu, texv = np.meshgrid(
+            (np.arange(texsize) + 0.5) / texsize,
+            (np.arange(texsize) + 0.5) / texsize)
+    texuv = np.stack((texu, texv), axis=-1)
+
+    vt = vt[vti]
+
+    viim = np.zeros((texsize, texsize, 3), dtype=np.int32)
+    vtiim = np.zeros((texsize, texsize, 3), dtype=np.int32)
+    baryim = np.zeros((texsize, texsize, 3), dtype=np.float32)
+
+    for i in list(range(ntris))[::-1]:
+        bbox = (
+            max(0, int(min(vt[i, 0, 0], min(vt[i, 1, 0], vt[i, 2, 0]))*texsize)-1),
+            min(texsize, int(max(vt[i, 0, 0], max(vt[i, 1, 0], vt[i, 2, 0]))*texsize)+2),
+            max(0, int(min(vt[i, 0, 1], min(vt[i, 1, 1], vt[i, 2, 1]))*texsize)-1),
+            min(texsize, int(max(vt[i, 0, 1], max(vt[i, 1, 1], vt[i, 2, 1]))*texsize)+2))
+        v0 = vt[None, None, i, 1, :] - vt[None, None, i, 0, :]
+        v1 = vt[None, None, i, 2, :] - vt[None, None, i, 0, :]
+        v2 = texuv[bbox[2]:bbox[3], bbox[0]:bbox[1], :] - vt[None, None, i, 0, :]
+        d00 = np.sum(v0 * v0, axis=-1)
+        d01 = np.sum(v0 * v1, axis=-1)
+        d11 = np.sum(v1 * v1, axis=-1)
+        d20 = np.sum(v2 * v0, axis=-1)
+        d21 = np.sum(v2 * v1, axis=-1)
+        denom = d00 * d11 - d01 * d01
+
+        if denom != 0.:
+            baryv = (d11 * d20 - d01 * d21) / denom
+            baryw = (d00 * d21 - d01 * d20) / denom
+            baryu = 1. - baryv - baryw
+
+            baryim[bbox[2]:bbox[3], bbox[0]:bbox[1], :] = np.where(
+                    ((baryu >= 0.) & (baryv >= 0.) & (baryw >= 0.))[:, :, None],
+                    np.stack((baryu, baryv, baryw), axis=-1),
+                    baryim[bbox[2]:bbox[3], bbox[0]:bbox[1], :])
+            viim[bbox[2]:bbox[3], bbox[0]:bbox[1], :] = np.where(
+                    ((baryu >= 0.) & (baryv >= 0.) & (baryw >= 0.))[:, :, None],
+                    np.stack((vi[i, 0], vi[i, 1], vi[i, 2]), axis=-1),
+                    viim[bbox[2]:bbox[3], bbox[0]:bbox[1], :])
+            vtiim[bbox[2]:bbox[3], bbox[0]:bbox[1], :] = np.where(
+                    ((baryu >= 0.) & (baryv >= 0.) & (baryw >= 0.))[:, :, None],
+                    np.stack((vti[i, 0], vti[i, 1], vti[i, 2]), axis=-1),
+                    vtiim[bbox[2]:bbox[3], bbox[0]:bbox[1], :])
+
+    return viim, vtiim, baryim
+
+def storePly(path, xyz, rgb):
+    # Define the dtype for the structured array
+    dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
+            ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
+            ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
+    
+    normals = np.zeros_like(xyz)
+
+    elements = np.empty(xyz.shape[0], dtype=dtype)
+    attributes = np.concatenate((xyz, normals, rgb), axis=1)
+    elements[:] = list(map(tuple, attributes))
+
+    # Create the PlyData object and write to file
+    vertex_element = PlyElement.describe(elements, 'vertex')
+    ply_data = PlyData([vertex_element])
+    ply_data.write(path)
+
+
+def read_obj(filename):
+    v = []
+    vt = []
+    vn = []
+    vindices = []
+    vtindices = []
+
+    with open(filename, "r") as f:
+        while True:
+            line = f.readline()
+
+            if line == "":
+                break
+
+            if line[:2] == "v ":
+                v.append([float(x) for x in line.split()[1:]])
+            elif line[:2] == "vt":
+                vt.append([float(x) for x in line.split()[1:]])
+            elif line[:2] == "f ":
+                vindices.append([int(entry.split('/')[0]) - 1 for entry in line.split()[1:]])
+                if line.find("/") != -1:
+                    vtindices.append([int(entry.split('/')[1]) - 1 for entry in line.split()[1:]])
+    
+    return v,vt,vindices,vtindices
+
+
 if __name__ == '__main__':
     
     args = parse_args()
@@ -194,20 +295,84 @@ if __name__ == '__main__':
     sensor_x,sensor_y = 10.0000, 17.777
     transforms = parse_cameras(args.calib,img_folder,args.mask_path,args.imw,args.imh)
     
-    pcd = o3d.io.read_point_cloud(args.points_in)
+    
+    
     transform_matrix_pcl = np.eye(4,dtype='float32')
     # Rotation of axis
     transform_matrix_pcl = transform_matrix_pcl[[2,0,1,3],:]
     transforms,transforms_pcd,center = central_point(transforms,transform_matrix_pcl)
-    # pcd.scale(3, center=pcd.get_center())
-    pcd.transform(transforms_pcd)
-    lights = {}
-    usc_lights = np.asarray(read_light_dir(args.lights_txt,scale=1000))[:,[2,0,1]]
-    lights['light_dir'] = [(direction - center).tolist() for direction in usc_lights]
-    lights['light_dir'] = light_order(args.lights_order,lights['light_dir'])
+    
+    if args.create_points:
+        v,vt,vindices,vtindices = read_obj(args.obj)
+        texsize = 1024
+    
+        idxim,tidxim,barim = gentritex(v,vt,vindices,vtindices,texsize)
+        geo=np.array(v)[:,:3]
+        colors = np.array(v)[:,3:]
+        # Convert to homogeneous coordinates by adding a fourth component (w = 1)
+        homogeneous_vertices = np.hstack([geo, np.ones((geo.shape[0], 1))])
+        transformed_vertices = homogeneous_vertices.dot(transforms_pcd.T)
+        # Convert back to 3D coordinates
+        # If the w component is not 1, you need to divide by it
+        geo = transformed_vertices[:, :3] / transformed_vertices[:, 3, np.newaxis] #(N,3)
+        
+        
+        sample_x,sample_y = 256,256
+        uvheight, uvwidth = texsize,texsize #4096x4096
+        stridey = uvheight // sample_x #sampling frequenc will set points
+        stridex = uvwidth // sample_y
+
+        v0 = geo[idxim[stridey//2::stridey, stridex//2::stridex, 0], :]
+        v1 = geo[idxim[stridey//2::stridey, stridex//2::stridex, 1], :]
+        v2 = geo[idxim[stridey//2::stridey, stridex//2::stridex, 2], :]
+        
+
+        # vt0 = vt[tidxim[stridey//2::stridey, stridex//2::stridex, 0], :]
+        # vt1 = vt[tidxim[stridey//2::stridey, stridex//2::stridex, 1], :]
+        # vt2 = vt[tidxim[stridey//2::stridey, stridex//2::stridex, 2], :]
+
+        c0 = colors[idxim[stridey//2::stridey, stridex//2::stridex, 0], :]
+        c1 = colors[idxim[stridey//2::stridey, stridex//2::stridex, 1], :]
+        c2 = colors[idxim[stridey//2::stridey, stridex//2::stridex, 2], :]
+        
+        ply_vertex = (
+                        barim[None,stridey//2::stridey, stridex//2::stridex, 0, None] * v0 +
+                        barim[None,stridey//2::stridey, stridex//2::stridex, 1, None] * v1 +
+                        barim[None,stridey//2::stridey, stridex//2::stridex, 2, None] * v2
+                        )
+        
+
+        
+        ply_colors = (
+                        barim[None,stridey//2::stridey, stridex//2::stridex, 0, None] * c0 +
+                        barim[None,stridey//2::stridey, stridex//2::stridex, 1, None] * c1 +
+                        barim[None,stridey//2::stridey, stridex//2::stridex, 2, None] * c2
+                        )
+        
+        ply_vertex=ply_vertex.reshape(sample_x*sample_y,3)
+        ply_colors=ply_colors.reshape(sample_x*sample_y,3)
+        ply_save = os.path.join(args.output,'points3d.ply')
+        img_save = os.path.join(args.output,'texture.png')
+        imwrite(img_save,(ply_colors.reshape(sample_x,sample_y,3)*255).astype('uint8'))
+        storePly(ply_save,ply_vertex,(ply_colors*255).astype('uint8'))
+        # some spurious points also coming clean manually?
+    else:
+        pcd = o3d.io.read_point_cloud(args.points_in)
+        pcd.transform(transforms_pcd)
+        point_cloud_out = os.path.join(args.output,'points3d.ply')
+        o3d.io.write_point_cloud(point_cloud_out, pcd)
+    
+    
+    if args.create_lights:
+        lights = {}
+        usc_lights = np.asarray(read_light_dir(args.lights_txt,scale=1000))[:,[2,0,1]]
+        lights['light_dir'] = [(direction - center).tolist() for direction in usc_lights]
+        lights['light_dir'] = light_order(args.lights_order,lights['light_dir'])
+        save_json(lights,os.path.join(args.output,'light_dir.json'))
+
+    
     save_json(transforms,os.path.join(args.output,'transforms_train.json'))
     save_json(transforms,os.path.join(args.output,'transforms_test.json'))
-    save_json(lights,os.path.join(args.output,'light_dir.json'))
-    point_cloud_out = os.path.join(args.output,'points3d.ply')
-    o3d.io.write_point_cloud(point_cloud_out, pcd)    
+    
+        
     
