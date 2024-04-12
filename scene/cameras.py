@@ -17,7 +17,8 @@ from utils.graphics_utils import getWorld2View2, getProjectionMatrix, fov2focal
 class Camera(nn.Module):
     def __init__(self, colmap_id, R, T, FoVx, FoVy,Cx,Cy, image, gt_alpha_mask,
                  image_name, uid,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda",light_dir = None
+                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, data_device = "cuda",light_dir = None,width=None,
+                 height=None
                  ):
         super(Camera, self).__init__()
 
@@ -39,16 +40,21 @@ class Camera(nn.Module):
             self.data_device = torch.device("cuda")
 
         # self.original_image = image.clamp(0.0, 1.0).to(self.data_device)
-        self.original_image = image.clamp(0.0, None).to('cpu')
-        self.image_width = self.original_image.shape[2]
-        self.image_height = self.original_image.shape[1]
+        if image != None:
+            self.original_image = image.clamp(0.0, None).to('cpu')
+            self.image_width = self.original_image.shape[2]
+            self.image_height = self.original_image.shape[1]
 
-        if gt_alpha_mask is not None:
-            # self.original_image *= gt_alpha_mask.to(self.data_device)
-            self.original_image *= gt_alpha_mask.to('cpu')
+            if gt_alpha_mask is not None:
+                # self.original_image *= gt_alpha_mask.to(self.data_device)
+                self.original_image *= gt_alpha_mask.to('cpu')
+            else:
+                # self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
+                self.original_image *= torch.ones((1, self.image_height, self.image_width), device='cpu')
         else:
-            # self.original_image *= torch.ones((1, self.image_height, self.image_width), device=self.data_device)
-            self.original_image *= torch.ones((1, self.image_height, self.image_width), device='cpu')
+            self.image_width = width
+            self.image_height = height
+            
         
         
         self.zfar = 100.0

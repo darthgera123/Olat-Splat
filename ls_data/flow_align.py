@@ -76,7 +76,8 @@ if __name__ == '__main__':
     canon_track = os.path.join(args.input,f'L_{str(canon[0]).zfill(3)}')
     
     
-    for light in tqdm(full_lights[:1]):
+    for light in tqdm(full_lights):
+        print(light)
         input_track1 = os.path.join(args.input,f'L_{str(light).zfill(3)}')
         output_track = os.path.join(args.output,f'L_{str(light).zfill(3)}')
         flow_dir = os.path.join(args.output,f'flow/{str(canon[0])}_{str(light).zfill(3)}')

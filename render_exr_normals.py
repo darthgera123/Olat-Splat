@@ -47,14 +47,14 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
     normal_ref_path = os.path.join(model_path, name, "ours_{}".format(iteration), "normal_ref")
     normal_axis_path = os.path.join(model_path, name, "ours_{}".format(iteration), "normal_axis")
     normal_path = os.path.join(model_path, name, "ours_{}".format(iteration), "normal")
-
-    makedirs(render_path, exist_ok=True)
-    makedirs(gts_path, exist_ok=True)
-    makedirs(depth_path, exist_ok=True)
-    makedirs(normal_ref_path, exist_ok=True)
-    makedirs(normal_axis_path, exist_ok=True)
-    makedirs(normal_path, exist_ok=True)
-    makedirs(alpha_path, exist_ok=True)
+    normal_uvpath = os.path.join(model_path, name, "ours_{}".format(iteration), "normal_uvmap")
+    # makedirs(render_path, exist_ok=True)
+    # makedirs(gts_path, exist_ok=True)
+    # makedirs(depth_path, exist_ok=True)
+    # makedirs(normal_ref_path, exist_ok=True)
+    makedirs(normal_uvpath, exist_ok=True)
+    # makedirs(normal_path, exist_ok=True)
+    # makedirs(alpha_path, exist_ok=True)
     cyan = torch.tensor([[0,1,1]]).cuda().reshape((3,1,1))
     yellow = torch.tensor([[1,1,0]]).cuda().reshape((3,1,1))
     times = 0
@@ -70,26 +70,26 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         np_gt = torch2numpy_pow(gt)
         rendering = results["render"]
         np_render = torch2numpy_pow(rendering)
-        depth = results["depth"]
-        depth = depth / (depth.max() + 1e-5)
-        alpha = results["alpha"]
-        normal_ref = results["normal_ref"]
-        normal_ref = 0.5 + (0.5*normal_ref)
+        # depth = results["depth"]
+        # depth = depth / (depth.max() + 1e-5)
+        # alpha = results["alpha"]
+        # normal_ref = results["normal_ref"]
+        # normal_ref = 0.5 + (0.5*normal_ref)
 
-        normal_axis = results["normal_axis"]
-        normal_axis = 0.5 + (0.5*normal_axis)
+        # normal_axis = results["normal_axis"]
+        # normal_axis = 0.5 + (0.5*normal_axis)
 
-        if "normal" in results.keys():
-            normal = results["normal"]
-            normal = 0.5 + (0.5*normal)
-            torchvision.utils.save_image(normal, os.path.join(normal_path, '{0:05d}'.format(idx) + ".png"))
+        # if "normal" in results.keys():
+        #     normal = results["normal"]
+        #     normal = 0.5 + (0.5*normal)
+        #     torchvision.utils.save_image(normal, os.path.join(normal_path, '{0:05d}'.format(idx) + ".png"))
         
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".exr"),np_render)
         imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".exr"),np_gt)
-        torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(alpha, os.path.join(alpha_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(normal_ref, os.path.join(normal_ref_path, '{0:05d}'.format(idx) + ".png"))
-        torchvision.utils.save_image(normal_axis, os.path.join(normal_axis_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image(alpha, os.path.join(alpha_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image(normal_ref, os.path.join(normal_ref_path, '{0:05d}'.format(idx) + ".png"))
+        # torchvision.utils.save_image(normal_axis, os.path.join(normal_axis_path, '{0:05d}'.format(idx) + ".png"))
         
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_render))
         imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_gt))
@@ -98,6 +98,24 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         # imwrite(os.path.join(normal_ref_path, '{0:05d}'.format(idx) + ".png"),normal_ref)
         # imwrite(os.path.join(normal_axis_path, '{0:05d}'.format(idx) + ".png"),normal_axis)
         # imwrite(os.path.join(normal_path, '{0:05d}'.format(idx) + ".png"),normal)
+        normal_uv = np.clip(results['normal_uvmap'].cpu().numpy().reshape(256,256,3),0,1)
+        imwrite(os.path.join(normal_uvpath, '{0:05d}'.format(idx) + ".png"),(normal_uv*255).astype('uint8'))
+
+
+        for k in results.keys():
+            if results[k].dim()<3 or k=="render" or k=="delta_normal_norm":
+                continue
+            save_path = os.path.join(model_path, name, "ours_{}".format(iteration), k)
+            makedirs(save_path, exist_ok=True)
+            if k == "alpha":
+                results[k] = results["alpha"][0][...,None].permute(2,0,1)
+            if k == "depth":
+                results[k] = results["depth"][0][...,None].permute(2,0,1)
+            elif "normal" in k:
+                # print(k,results[k].min(),results[k].max())
+                results[k] = 0.5 + (0.5*results[k])
+                # print(k,results[k].min(),results[k].max())
+            torchvision.utils.save_image(results[k], os.path.join(save_path, '{0:05d}'.format(idx) + ".png"))
     print(f"The function took {times/len(views)} seconds to execute.")
 
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):

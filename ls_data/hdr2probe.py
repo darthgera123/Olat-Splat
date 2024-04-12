@@ -101,23 +101,26 @@ if __name__ == '__main__':
 
     envmap = imread(args.envmap)
     colors = []
-    for i in range(331):
-        mask = np.zeros((256,512,3))
-        mask[mapy==(order[i]-1)] = 1
-        # color = np.sum(envmap * mask)/(np.sum(mask==1))
-        masked = envmap*mask
-        intensity_sum = np.sum(masked, axis=2)
-        max_intensity_location = np.unravel_index(np.argmax(intensity_sum), intensity_sum.shape)
-        color = masked[max_intensity_location]
+    envmap_name = (args.envmap).split('/')[-1].split('.')[0]
+    print(envmap_name)
+    # for i in range(331):
+    #     mask = np.zeros((256,512,3))
+    #     mask[mapy==(order[i]-1)] = 1
+    #     # color = np.sum(envmap * mask)/(np.sum(mask==1))
+    #     masked = envmap*mask
+    #     intensity_sum = np.sum(masked, axis=2)
+    #     max_intensity_location = np.unravel_index(np.argmax(intensity_sum), intensity_sum.shape)
+    #     color = masked[max_intensity_location]
         
-        colors.append(color)
+    #     colors.append(color)
     
-    # colors = [(255,255,255) for _ in range(331)]
-    overlay = np.zeros((256,512,3))
-    envmap_ = generate_env_map(overlay,points,512,256,center,colors)
+    # # colors = [(255,255,255) for _ in range(331)]
+    # overlay = np.zeros((256,512,3))
+    # envmap_ = generate_env_map(overlay,points,512,256,center,colors)
 
-    imwrite('envmap.hdr',envmap_.astype('float32'))
-    imwrite('envmap.png',(np.clip(np.power(envmap_,0.45),0,1)*255).astype('uint8'))
-    imwrite('input.png',(np.clip(np.power(envmap,0.45),0,1)*255).astype('uint8'))
+    # imwrite(f'envmap.hdr',envmap_.astype('float32'))
+    imwrite(f'{envmap_name}.png',(np.clip(np.power(envmap,0.45),0,1)*255).astype('uint8'))
+    
+    # imwrite('input.png',(np.clip(np.power(envmap,0.45),0,1)*255).astype('uint8'))
 
     

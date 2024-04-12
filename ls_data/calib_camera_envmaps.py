@@ -11,6 +11,8 @@ import math
 import open3d as o3d
 from plyfile import PlyData, PlyElement
 from create_test_pose import generate_interpolated_poses
+import copy
+import subprocess
 
 def parse_args():
     parser =  ArgumentParser(description="convert calib file to nerf format transforms.json")
@@ -243,20 +245,16 @@ def gentritex(v, vt, vi, vti, texsize):
 
     return viim, vtiim, baryim
 
-def storePly(path, xyz, rgb,mask=None):
+def storePly(path, xyz, rgb):
     # Define the dtype for the structured array
     dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
             ('red', 'u1'), ('green', 'u1'), ('blue', 'u1')]
-    if mask is not None:
-        dtype += [('mask','u1')]
+    
     normals = np.zeros_like(xyz)
 
     elements = np.empty(xyz.shape[0], dtype=dtype)
-    if mask is None:
-        attributes = np.concatenate((xyz, normals, rgb), axis=1)
-    else:
-        attributes = np.concatenate((xyz, normals, rgb,mask), axis=1)
+    attributes = np.concatenate((xyz, normals, rgb), axis=1)
     elements[:] = list(map(tuple, attributes))
 
     # Create the PlyData object and write to file
@@ -337,18 +335,6 @@ def mask_and_sample_points(vt, tidxim, colors, stridey, stridex):
 
     return sampled_points, sampled_colors
 
-def generate_ply_mask(baryim, stridey, stridex):
-    # Extract the barycentric coordinates for the sampled points
-    sampled_barycoords = baryim[stridey//2::stridey, stridex//2::stridex]
-    
-    # Determine if the barycentric coordinates correspond to a point within the triangle
-    # This is true if all barycentric coordinates are greater than 0
-    mask = np.all(sampled_barycoords > 0, axis=-1)
-    
-    # Convert the boolean mask to a mask with values [1,1,1] or [0,0,0]
-    ply_mask = np.where(mask[:, :, None], 1, 0)
-    
-    return ply_mask
 
 
 if __name__ == '__main__':
@@ -420,11 +406,8 @@ if __name__ == '__main__':
                         barim[None,stridey//2::stridey, stridex//2::stridex, 2, None] * c2
                         )
         
-        ply_mask = generate_ply_mask(barim, stridey, stridex)
-        
         ply_vertex=ply_vertex.reshape(sample_x*sample_y,3)
         ply_colors=ply_colors.reshape(sample_x*sample_y,3)
-        ply_mask=ply_mask.reshape(sample_x*sample_y,1)
         # ply_vertex = np.zeros((sampled_points.shape[0], 3))
         # ply_colors = np.zeros((sampled_colors.shape[0], 3))
 
@@ -439,10 +422,8 @@ if __name__ == '__main__':
 
         ply_save = os.path.join(args.output,'points3d.ply')
         img_save = os.path.join(args.output,'texture.png')
-        mask_save = os.path.join(args.output,'mask.png')
         imwrite(img_save,(ply_colors.reshape(sample_x,sample_y,3)*255).astype('uint8'))
-        cv2.imwrite(mask_save,(ply_mask.reshape(sample_x,sample_y,1)*255).astype('uint8'))
-        storePly(ply_save,ply_vertex,(ply_colors*255).astype('uint8'),ply_mask.astype('uint8'))
+        storePly(ply_save,ply_vertex,(ply_colors*255).astype('uint8'))
         # some spurious points also coming clean manually?
     else:
         pcd = o3d.io.read_point_cloud(args.points_in)
@@ -450,6 +431,28 @@ if __name__ == '__main__':
         point_cloud_out = os.path.join(args.output,'points3d.ply')
         o3d.io.write_point_cloud(point_cloud_out, pcd)
     
+    # envmap_names = ["9C4A0003-e05009bcad", "9C4A0004-db1d4a14f3", "9C4A0006-5133111e97" ,\
+    #                     "9C4A0010-48093a025c", "9C4A0022-6d8fe2e88e", "9C4A0027-9a856d679a", \
+    #                     "9C4A0029-372e11316d", "9C4A0034-a460e29cd9", "9C4A0037-b2d1efd096", \
+    #                     "9C4A0045-76d25bb135", "9C4A0046-6f317ef205", "9C4A0048-48d7dfa6b0", \
+    #                     "9C4A0052-9b4fa1e4a1", "9C4A0064-2bf2b7e178", "9C4A0069-8ccc2075f2", \
+    #                     "9C4A0071-20e04984d0", "9C4A0076-46c51ec2c2", "9C4A0079-7fb521e807", \
+    #                     "9C4A0087-5ad3395167", "9C4A0088-5162e36ae6", "9C4A0090-81b4c61bc1", \
+    #                     "9C4A0094-c96fec6e86", "9C4A0106-3656c02faf", "9C4A0120-0fd27f2a38", \
+    #                     "9C4A0121-ff0fd23bdf", "9C4A0129-34b0d8cec2", "9C4A0132-07352d1dd0", \
+    #                     "9C4A0136-05a3e2b220", "9C4A0137-73c0813158", "9C4A0148-c51c9e3c93"]
+
+    # train_env_maps = [  "9C4A0004-db1d4a14f3","9C4A0027-9a856d679a","9C4A0045-76d25bb135",\
+    #                     "9C4A0048-48d7dfa6b0","9C4A0069-8ccc2075f2","9C4A0071-20e04984d0",\
+    #                     "9C4A0076-46c51ec2c2", "9C4A0079-7fb521e807","9C4A0106-3656c02faf",\
+    #                     "9C4A0137-73c0813158"  ]
+    # test_env_maps = ["9C4A0003-e05009bcad","9C4A0120-0fd27f2a38"]
+        
+    with open('envmap.txt', 'r') as file:
+    # Read all lines from the file and store them in a list
+        lines = [line.strip() for line in file]
+    train_env_maps = lines[0:500]
+    test_env_maps = lines[0:10] + lines[1000:1002]
     
     # if args.create_lights:
     #     lights = {}
@@ -458,57 +461,69 @@ if __name__ == '__main__':
     #     lights['light_dir'] = light_order(args.lights_order,lights['light_dir'])
     #     save_json(lights,os.path.join(args.output,'light_dir.json'))
     if args.create_lights:
-        envmap = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/indoor_scene',args.envmap)
-        transforms['envmap'] = envmap + '.exr'
+        # envmap = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/indoor_scene',args.envmap)
 
+        # transforms['envmap'] = envmap + '.exr'
+        
     
-    if args.create_spiral:
-        # N = 50
-        N=1
-        indices = [5,14,18,19,5]
-        test_indices = [5,18,38]
-        transforms_test = dict()
-        transforms_test["aabb_scale"] = 16.0
-        if args.create_lights:
-            transforms_test['envmap'] = envmap + '.exr'
-        frames = []
-        # for i in range(0,len(indices[:-1])):
-        #     start_frame = transforms["frames"][indices[i]]
-        #     pose1 = np.asarray(start_frame["transform_matrix"])
-        #     pose2 = np.asarray(transforms["frames"][indices[i+1]]["transform_matrix"])
-        #     poses = generate_interpolated_poses(pose1,pose2,N)
+        if args.create_spiral:
+            # N = 50
+            N=1
+            indices = [5,14,18,19,5]
+            test_indices = [5,18,38]
+            transforms_test = dict()
+            transforms_test["aabb_scale"] = 16.0
+
+            frames = []
+            # for i in range(0,len(indices[:-1])):
+            #     start_frame = transforms["frames"][indices[i]]
+            #     pose1 = np.asarray(start_frame["transform_matrix"])
+            #     pose2 = np.asarray(transforms["frames"][indices[i+1]]["transform_matrix"])
+            #     poses = generate_interpolated_poses(pose1,pose2,N)
+                
+            #     for i in range(0,len(poses)):
+            #         frame={}
+            #         frame = start_frame.copy()
+            #         frame["transform_matrix"] = poses[i].tolist()
+            #         frames.append(frame)
+
+
             
-        #     for i in range(0,len(poses)):
-        #         frame={}
-        #         frame = start_frame.copy()
-        #         frame["transform_matrix"] = poses[i].tolist()
-        #         frames.append(frame)
-
-
+            
+            for ind in test_indices:
+                for env in test_env_maps:
+                    
+                    frame_copy = copy.deepcopy(transforms['frames'][ind])
         
+                    frame_copy['file_path'] = os.path.join(args.img_path, env, f'images/Cam_{str(ind).zfill(2)}')
+                    frame_copy['envmap'] = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/med_exr', env + '.exr')
+                    frames.append(frame_copy)
+                    
+            transforms_test["frames"] = frames
+            
+            save_json(transforms_test,os.path.join(args.output,'transforms_test.json'))
+            
+            # all_frames = transforms["frames"]
+            transforms_train = dict()
+            transforms_test["aabb_scale"] = 16.0
+            frames = []
+            for ind in range(0,len(transforms['frames'])):
+                if ind in test_indices:
+                    continue
+                for env in train_env_maps:
+                    
+                    frame_copy = copy.deepcopy(transforms['frames'][ind])
         
-        for ind in test_indices:
-            frames.append(transforms['frames'][ind])
-        transforms_test["frames"] = frames
-        
-        save_json(transforms_test,os.path.join(args.output,'transforms_test.json'))
-        
-        # all_frames = transforms["frames"]
-        transforms_train = dict()
-        transforms_test["aabb_scale"] = 16.0
-        frames = []
-        for ind in range(0,len(transforms['frames'])):
-            if ind in test_indices:
-                continue
-            frames.append(transforms['frames'][ind])
-        
-        transforms_train["frames"] = frames
-        if args.create_lights:
-            transforms_train['envmap'] = envmap + '.exr'
-        save_json(transforms_train,os.path.join(args.output,'transforms_train.json'))
-    else:
-        save_json(transforms,os.path.join(args.output,'transforms_test.json'))
-        save_json(transforms,os.path.join(args.output,'transforms_train.json'))
+                    frame_copy['file_path'] = os.path.join(args.img_path, env, f'images/Cam_{str(ind).zfill(2)}')
+                    frame_copy['envmap'] = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/med_exr', env + '.exr')
+                    frames.append(frame_copy)
+            
+            transforms_train["frames"] = frames
+            
+            save_json(transforms_train,os.path.join(args.output,'transforms_train.json'))
+        else:
+            save_json(transforms,os.path.join(args.output,'transforms_test.json'))
+            save_json(transforms,os.path.join(args.output,'transforms_train.json'))
     
     
         

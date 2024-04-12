@@ -36,12 +36,12 @@ def exr2png(img):
 
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background, specular):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders_color")
-    gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
+    # gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
     # depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
     # acc_path = os.path.join(model_path, name, "ours_{}".format(iteration), "acc")
 
     makedirs(render_path, exist_ok=True)
-    makedirs(gts_path, exist_ok=True)
+    # makedirs(gts_path, exist_ok=True)
     # makedirs(depth_path, exist_ok=True)
     # makedirs(acc_path, exist_ok=True)
 
@@ -63,22 +63,21 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         # depth = results["depth"]
         # depth = depth / (depth.max() + 1e-5)
 
-        gt = view.original_image[0:3, :, :]
+        # gt = view.original_image[0:3, :, :]
         # np_img = np.power(np_img,2.2)
         # np_render = np.power(torch2numpy(rendering),2.2)
         np_render = torch2numpy(rendering)
-        np_gt = torch2numpy(gt)
+        # np_gt = torch2numpy(gt)
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".exr"),np_render)
-        imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".exr"),np_gt)
+        # imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".exr"),np_gt)
         
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_render))
-        imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_gt))
+        # imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_gt))
         
         # torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(depth, os.path.join(depth_path, '{0:05d}'.format(idx) + ".png"))
-        del gt,rendering,np_render,np_gt
-
+        del rendering,np_render
 
 def render_sets(dataset: ModelParams, iteration: int, pipeline: PipelineParams, skip_train: bool, skip_test: bool,
                 mode: str):

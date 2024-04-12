@@ -189,7 +189,6 @@ class NeRFNetwork(nn.Module):
         vis = torch.sigmoid(h1)
 
         col = color*vis
-        col = col
         # return sigma, color
         return col
 

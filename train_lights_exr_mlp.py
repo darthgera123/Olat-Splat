@@ -17,17 +17,32 @@ from utils.loss_utils import l1_loss, ssim, l1_loss_exp,PerceptualLoss
 from gaussian_renderer import render,render_spec, network_gui
 import sys
 from scene import Scene_exr_light, GaussianModel_exr, SpecularModel
-from utils.general_utils import safe_state,get_expon_lr_func
+from utils.general_utils import safe_state,get_expon_lr_func,NPtoTorch
 import uuid
 from tqdm import tqdm
 from utils.image_utils import psnr
 from argparse import ArgumentParser, Namespace
 from arguments import ModelParams, PipelineParams, OptimizationParams
+import numpy as np
+from imageio.v2 import imread,imwrite
 try:
     from torch.utils.tensorboard import SummaryWriter
     TENSORBOARD_FOUND = True
 except ImportError:
     TENSORBOARD_FOUND = False
+
+def tonemap(img):
+    return torch.pow(img+1e-5,0.45)
+def read_gt(image_path):
+    image = np.clip(imread(image_path),0,None)
+    image = NPtoTorch(image,resolution=1)
+    return image.cuda()
+
+def torch2numpy(img):
+    np_img = img.cpu().detach().numpy()
+    np_img = np.transpose(np_img, (1, 2, 0))
+    
+    return np_img
 
 def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from):
     first_iter = 0
@@ -83,16 +98,20 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
         image = render_pkg["render"]
         # Loss
         
-        gt_image = viewpoint_cam.original_image.cuda()
-        # gt_image = gt_image.to('cuda')
+        # gt_image = viewpoint_cam.original_image.cuda()
+        gt_image = read_gt(viewpoint_cam.image_name)
+        # np_gt = torch2numpy(gt_image)
+        # np_png = torch2numpy(tonemap(gt_image))
+        
         # Ll1 = l1_loss(image, gt_image)
-        Ll1 = l1_loss_exp(image, gt_image)
+        # Ll1 = l1_loss_exp(image, gt_image)
+        Ll1 = l1_loss(tonemap(image), tonemap(gt_image))
         # L2 = percep(image,gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) 
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(tonemap(image), tonemap(gt_image))) 
         loss.backward()
         
         iter_end.record()
-        # del gt_image
+        del gt_image
         with torch.no_grad():
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
@@ -166,6 +185,8 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             if config['cameras'] and len(config['cameras']) > 0:
                 images = torch.tensor([], device="cuda")
                 gts = torch.tensor([], device="cuda")
+                l1_test = 0.0
+                psnr_test = 0.0
                 for idx, viewpoint in enumerate(config['cameras']):
                     
                     dir_pp = (scene.gaussians.get_xyz - viewpoint.camera_center.repeat(
@@ -178,9 +199,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                     image = torch.clamp(
                         renderFunc(viewpoint, scene.gaussians, *renderArgs, mlp_color)["render"],
                         0.0, 1.0)
-                    gt_image = torch.clamp(viewpoint.original_image.to("cuda"), 0.0, 1.0)
-                    images = torch.cat((images, image.unsqueeze(0)), dim=0)
-                    gts = torch.cat((gts, gt_image.unsqueeze(0)), dim=0)
+                    gt_image = torch.clamp(read_gt(viewpoint.image_name), 0.0, 1.0)
+                    # images = torch.cat((images, image.unsqueeze(0)), dim=0)
+                    # gts = torch.cat((gts, gt_image.unsqueeze(0)), dim=0)
 
                     
                     if tb_writer and (idx < 5):
@@ -189,16 +210,18 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
                         if iteration == testing_iterations[0]:
                             tb_writer.add_images(config['name'] + "_view_{}/ground_truth".format(viewpoint.image_name),
                                                  gt_image[None], global_step=iteration)
-
-                l1_test = l1_loss(images, gts)
-                psnr_test = psnr(images, gts).mean()
+                    l1_test += l1_loss(image, gt_image).mean().double()
+                    psnr_test += psnr(image, gt_image).mean().double()
+                    del gt_image
+                psnr_test /= len(config['cameras'])
+                l1_test /= len(config['cameras']) 
                 if config['name'] == 'test' or len(validation_configs[0]['cameras']) == 0:
                     test_psnr = psnr_test
                 print("\n[ITER {}] Evaluating {}: L1 {} PSNR {}".format(iteration, config['name'], l1_test, psnr_test))
                 if tb_writer:
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - l1_loss', l1_test, iteration)
                     tb_writer.add_scalar(config['name'] + '/loss_viewpoint - psnr', psnr_test, iteration)
-                del gt_image
+                
         if tb_writer:
             tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
             tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
@@ -216,8 +239,8 @@ if __name__ == "__main__":
     parser.add_argument('--port', type=int, default=6009)
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
-    parser.add_argument("--test_iterations", nargs="+", type=int, default=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000,12000,13000,14000,15000,16000,17000,18000,19000])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[1000,2000,3000,4000,5000,6000,7000,8000,9000,10000,12000,13000,14000,15000,16000,17000,18000,19000])
+    parser.add_argument("--test_iterations", nargs="+", type=int, default=[100,1000,7000,10000])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[100,1000,7000,10000])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[10000])
     parser.add_argument("--start_checkpoint", type=str, default = None)

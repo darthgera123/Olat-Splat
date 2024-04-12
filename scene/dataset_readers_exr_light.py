@@ -199,8 +199,9 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             image_name = Path(cam_name).stem
             
             
-            image = np.power(np.clip(imread(image_path),0,None),0.45)
-            image = np.clip(imread(image_path),0,None)
+            # image = np.power(np.clip(imread(image_path),0,None),0.45)
+            # image = np.clip(imread(image_path),0,None)
+            image= None
             imh = int(frame['h'])
             imw = int(frame['w'])
 
@@ -219,7 +220,7 @@ def readCamerasFromTransforms(path, transformsfile, white_background, extension=
             light_dir = np.asarray(frame['light_direction'])
 
             cam_infos.append(CameraInfo(uid=idx, R=R, T=T, FovY=FovY, FovX=FovX,Cx =Cx,Cy=Cy, image=image,
-                            image_path=image_path, image_name=image_name, width=imw, height=imh,
+                            image_path=image_path, image_name=image_path, width=imw, height=imh,
                             light_dir=light_dir))
             
     return cam_infos

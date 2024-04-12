@@ -20,7 +20,7 @@ from utils.sh_utils import RGB2SH, SH2RGB
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation,get_minimum_axis, flip_align_view
-
+from imageio.v2 import imread,imwrite
 
 
 class GaussianModel:
@@ -613,13 +613,20 @@ class GaussianModel_exr:
         return l
 
     def save_ply(self, path):
-        mkdir_p(os.path.dirname(path))
+        folder =os.path.dirname(path) 
+        mkdir_p(folder)
 
         xyz = self._xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz) if not self.brdf else self._normal.detach().cpu().numpy()
         normals2 = self._normal2.detach().cpu().numpy() if (self.brdf) else np.zeros_like(xyz)
         f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
         f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        # print(f_dc.shape)
+        # print(self._features_dc.shape)
+        # print(self._features_dc.transpose(1,2).shape)
+        # print(f_rest.shape)
+        # print(self._features_rest.shape)
+        # print(self._features_rest.transpose(1,2).shape)
         opacities = self._opacity.detach().cpu().numpy()
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
@@ -633,8 +640,17 @@ class GaussianModel_exr:
         # rgb_png = np.clip(np.power(np.clip(rgb_exr,1e-5,None),0.45),0,1)
         
         
-        # f_dc_png = RGB2SH(rgb_png)
+        f_dc_png = np.clip(SH2RGB(f_dc),0,1).reshape(256,256,3)
+        np.save(os.path.join(folder,'pos_map.npy'),xyz.reshape(256,256,3))
+        np.save(os.path.join(folder,'rot_map.npy'),rotation.reshape(256,256,4))
+        np.save(os.path.join(folder,'scale_map.npy'),scale.reshape(256,256,3))
+        np.save(os.path.join(folder,'opa_map.npy'),opacities.reshape(256,256,1))
+        # np.save(os.path.join(folder,'f_rest_map.npy'),f_rest.reshape(256,256,45))
+        np.save(os.path.join(folder,'diff_map.npy'),f_dc.reshape(256,256,3))
+        imwrite(os.path.join(folder,'diffuse.png'),(f_dc_png*255).astype('uint8'))
         if self.brdf:
+            np.save(os.path.join(folder,'normals.npy'),normals.reshape(256,256,3))
+            np.save(os.path.join(folder,'normals2.npy'),normals2.reshape(256,256,3))
             
             attributes = np.concatenate((xyz, normals, normals2, f_dc, f_rest, opacities, scale, rotation), axis=1)
         else:
@@ -643,7 +659,7 @@ class GaussianModel_exr:
         el = PlyElement.describe(elements, 'vertex')
         PlyData([el]).write(path)
 
-
+        
         
         
         
@@ -714,7 +730,7 @@ class GaussianModel_exr:
             normal2 = np.stack((np.asarray(plydata.elements[0]["nx2"]),
                             np.asarray(plydata.elements[0]["ny2"]),
                             np.asarray(plydata.elements[0]["nz2"])),  axis=1)
-
+        
         self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
         self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
         self._features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
@@ -749,7 +765,8 @@ class GaussianModel_exr:
         self._opacity = self._opacity.detach()
         self._scaling = self._scaling.detach()
         self._rotation = self._rotation.detach()
-        # self._features_dc = self._features_dc.detach()
+        self._features_dc = self._features_dc.detach()
+        self._features_rest = self._features_rest.detach()
         self._normal = self._normal.detach()
         self._normal2 = self._normal2.detach()
         # self._features_dc = torch.zeros(self._features_dc.shape).cuda().requires_grad_(True)
@@ -1768,6 +1785,7 @@ class GaussianModel_color:
         if not self.brdf:
             self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
             self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
+    
         else:
             self._features_dc = nn.Parameter(features[:,:3].contiguous().requires_grad_(True))
             if (self.brdf_mode=="envmap" and self.brdf_dim==0):
@@ -1784,6 +1802,7 @@ class GaussianModel_color:
             self._roughness = nn.Parameter(self.default_roughness*torch.ones((fused_point_cloud.shape[0], 1), device="cuda").requires_grad_(True))
             self._normal2 = nn.Parameter(torch.from_numpy(normals2).to(self._xyz.device).requires_grad_(True))
 
+        
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))

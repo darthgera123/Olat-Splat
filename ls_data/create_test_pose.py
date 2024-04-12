@@ -135,17 +135,8 @@ def load_json(json_path):
 def save_json(data,json_path):
     with open(json_path,'w') as file:
         json.dump(data, file, sort_keys=True, indent=4)
-def mirror_camera_extrinsics(extrinsic_matrix):
-    # Make a copy of the input matrix to avoid modifying it directly
-    mirrored_extrinsic = extrinsic_matrix.copy()
 
-    # Invert the sign of the translation along the X-axis
-    mirrored_extrinsic[0, 3] = -mirrored_extrinsic[0, 3]
 
-    # Flip the rotation along the Z-axis
-    mirrored_extrinsic[:3, :3] = np.dot(np.array([[-1, 0, 0], [0, -1, 0], [0, 0, 1]]), mirrored_extrinsic[:3, :3])
-
-    return mirrored_extrinsic
 
 if __name__ == '__main__':
     
@@ -159,13 +150,15 @@ if __name__ == '__main__':
     N=args.num
     start_frame = transforms["frames"][args.start_pose]
     pose1 = np.asarray(start_frame["transform_matrix"])
-    # pose2 = np.asarray(transforms["frames"][args.mid_pose]["transform_matrix"])
+    pose2 = np.asarray(transforms["frames"][args.mid_pose]["transform_matrix"])
     # pose3 = np.asarray(transforms["frames"][args.end_pose]["transform_matrix"])
     # pose2 = mirror_camera_extrinsics(pose1)
     # pose4 = mirror_camera_extrinsics(pose3)
-    # poses = generate_interpolated_poses(pose1,pose3,N)
-    center = [0.64895969, 0.61341898, 1.64698363]
-    poses =  generate_circle_poses(center,1,10)
+    poses = generate_interpolated_poses(pose1,pose2,N)
+    # center = [-0.64895969, -0.61341898, -1.64698363]
+   
+    
+
             
     
     frames = []
@@ -174,7 +167,26 @@ if __name__ == '__main__':
         frame = start_frame.copy()
         frame["transform_matrix"] = poses[i].tolist()
         frames.append(frame)
+    
+    start_frame = transforms["frames"][args.mid_pose]
+    pose1 = np.asarray(start_frame["transform_matrix"])
+    pose2 = np.asarray(transforms["frames"][args.end_pose]["transform_matrix"])
+    # pose3 = np.asarray(transforms["frames"][args.end_pose]["transform_matrix"])
+    # pose2 = mirror_camera_extrinsics(pose1)
+    # pose4 = mirror_camera_extrinsics(pose3)
+    poses = generate_interpolated_poses(pose1,pose2,N)
+    # center = [-0.64895969, -0.61341898, -1.64698363]
+   
+    
+
             
+    
+    
+    for i in range(0,len(poses)):
+        frame={}
+        frame = start_frame.copy()
+        frame["transform_matrix"] = poses[i].tolist()
+        frames.append(frame)
         
     
     transforms_test["frames"] = frames

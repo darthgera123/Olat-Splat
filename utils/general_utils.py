@@ -25,7 +25,7 @@ def PILtoTorch(pil_image, resolution):
         return resized_image.permute(2, 0, 1)
     else:
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
-def NPtoTorch(np_image,resolution):
+def NPtoTorch(np_image,resolution=1):
     # some resize code also needed
     if np_image.dtype == 'uint8':
         resized_image = torch.from_numpy(np.array(np_image)) / 255.0

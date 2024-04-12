@@ -64,7 +64,7 @@ if __name__ == '__main__':
     canon = [203]
     bright = [363]
     os.makedirs(args.output,exist_ok=True)
-    
+
     canon_track = os.path.join(args.input,f'L_{str(canon[0]).zfill(3)}')
     
     
@@ -80,15 +80,20 @@ if __name__ == '__main__':
     
     start = args.start
     end = args.end
-    if start == canon[0]:
-        start,end = end,start
+    
     for f in range(start+1,end):
         factor = (end-f)/(end-start)
+        
         input_track = os.path.join(args.input,f'L_{str(f).zfill(3)}')
         output_track = os.path.join(args.output,f'L_{str(f).zfill(3)}')
-        flow_dir = os.path.join(args.flow,f'{str(canon[0])}_{str(start).zfill(3)}')
+        if start != canon[0]:
+            flow_dir = os.path.join(args.flow,f'{str(canon[0])}_{str(start).zfill(3)}')
+        else:
+            flow_dir = os.path.join(args.flow,f'{str(canon[0])}_{str(end).zfill(3)}')
+        
         os.makedirs(output_track,exist_ok=True)
         for cam in tqdm(range(0,40)):
+            
             image = load_image(os.path.join(input_track,f'Cam_{str(cam).zfill(2)}.exr'))
             flow_map = np.load(os.path.join(flow_dir,f'Cam_{str(cam).zfill(2)}.npy'))
             

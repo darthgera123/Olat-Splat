@@ -36,30 +36,37 @@ def exr2png(img):
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
+    alpha_path = os.path.join(model_path, name, "ours_{}".format(iteration), "alpha")
 
     makedirs(render_path, exist_ok=True)
     makedirs(gts_path, exist_ok=True)
+    makedirs(alpha_path, exist_ok=True)
     cyan = torch.tensor([[0,1,1]]).cuda().reshape((3,1,1))
     yellow = torch.tensor([[1,1,0]]).cuda().reshape((3,1,1))
     times = 0 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")): 
         start_time = time.time()
-        rendering = render(view, gaussians, pipeline, background)["render"]
+        renders = render(view, gaussians, pipeline, background)
         end_time = time.time()
         execution_time = end_time - start_time
         times += execution_time
+        rendering = renders['render']
+        alpha_img = renders['alpha_img']
         
         gt = view.original_image[0:3, :, :]
         np_render = torch2numpy(rendering)
+        
         np_gt = torch2numpy(gt)
-
+        del renders,rendering,gt
         # torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
         # torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".exr"),np_render)
-        imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".exr"),np_gt)
-        
+        # imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".exr"),np_gt)
+        torchvision.utils.save_image(alpha_img, os.path.join(alpha_path, '{0:05d}'.format(idx) + ".png"))
         imwrite(os.path.join(render_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_render))
         imwrite(os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"),exr2png(np_gt))
+        del np_render,np_gt
+
     print(f"The function took {times/len(views)} seconds to execute.")
 def render_sets(dataset : ModelParams, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool):
     with torch.no_grad():

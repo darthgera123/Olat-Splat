@@ -79,10 +79,12 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
             colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
+            # print(pc.get_features.shape)
             shs = pc.get_features
+            
     else:
         colors_precomp = override_color
-
+    print("SHS",shs.shape)
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     rendered_image, radii = rasterizer(
         means3D = means3D,
@@ -93,13 +95,40 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
         scales = scales,
         rotations = rotations,
         cov3D_precomp = cov3D_precomp)
+    
+    raster_settings_alpha = GaussianRasterizationSettings(
+            image_height=int(viewpoint_camera.image_height),
+            image_width=int(viewpoint_camera.image_width),
+            tanfovx=tanfovx,
+            tanfovy=tanfovy,
+            bg=torch.tensor([0,0,0], dtype=torch.float32, device="cuda"),
+            scale_modifier=scaling_modifier,
+            viewmatrix=viewpoint_camera.world_view_transform,
+            projmatrix=viewpoint_camera.full_proj_transform,
+            sh_degree=pc.active_sh_degree,
+            campos=viewpoint_camera.camera_center,
+            prefiltered=False,
+            # debug=False
+        )
+    rasterizer_alpha = GaussianRasterizer(raster_settings=raster_settings_alpha)
+    alpha = torch.ones_like(means3D) 
+    alpha_img =  rasterizer_alpha(
+        means3D = means3D,
+        means2D = means2D,
+        shs = None,
+        colors_precomp = alpha,
+        opacities = opacity,
+        scales = scales,
+        rotations = rotations,
+        cov3D_precomp = cov3D_precomp)[0]
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": rendered_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
-            "radii": radii}
+            "radii": radii,
+            "alpha_img":alpha_img}
 
 
 def render_spec(viewpoint_camera, pc, pipe, bg_color: torch.Tensor, mlp_color,
@@ -133,7 +162,7 @@ def render_spec(viewpoint_camera, pc, pipe, bg_color: torch.Tensor, mlp_color,
         sh_degree=pc.active_sh_degree,
         campos=viewpoint_camera.camera_center,
         prefiltered=False,
-        debug=pipe.debug
+        
     )
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
@@ -275,9 +304,9 @@ def rendered_world2cam(viewpoint_cam, normal, alpha, bg_color):
     normal_world = normal.permute(1,2,0).reshape(-1, 3) # (HxW, 3)
     normal_cam = torch.cat([normal_world, torch.ones_like(normal_world[...,0:1])], axis=-1) @ torch.inverse(torch.inverse(extrinsic_matrix).transpose(0,1))[...,:3]
     normal_cam = normal_cam.reshape(H, W, 3).permute(2,0,1) # (H, W, 3)
-    
-    background = bg_color[...,None,None]
-    normal_cam = normal_cam*alpha[None,...] + background*(1. - alpha[None,...])
+    if alpha != None:
+        background = bg_color[...,None,None]
+        normal_cam = normal_cam*alpha[None,...] + background*(1. - alpha[None,...])
 
     return normal_cam
 def render_lighting(pc : GaussianModel, resolution=(512, 1024), sampled_index=None):
@@ -397,6 +426,7 @@ def render_normal(viewpoint_camera, pc, pipe, bg_color: torch.Tensor,
     if pipe.brdf:
         
         render_extras['normal'] = 0.5*(normal.reshape(-1,3)) + 0.5
+        
         render_extras['delta_normal'] = delta_normal.repeat(1, 3)
 
     out_extras = {}
@@ -451,12 +481,13 @@ def render_normal(viewpoint_camera, pc, pipe, bg_color: torch.Tensor,
     out_extras["normal_ref"] = render_normal_ref(viewpoint_cam=viewpoint_camera, depth=out_extras['depth'][0],bg_color=bg_color, alpha=out_extras['alpha'][0])
     out_extras["normal_ref_cam"] = rendered_world2cam(viewpoint_camera, out_extras["normal_ref"], out_extras['alpha'][0], bg_color)
     out_extras["normal_axis_cam"] = rendered_world2cam(viewpoint_camera, out_extras["normal_axis"], out_extras['alpha'][0], bg_color)
-
+    
     if pipe.brdf:
         normalize_normal_inplace(out_extras["normal"], out_extras["alpha"][0])
             
         out_extras["normal_cam"] = rendered_world2cam(viewpoint_camera, out_extras["normal"], out_extras['alpha'][0], bg_color)
-    
+        out_extras['normal_uvmap'] = render_extras['normal']
+        
     out = {"render": rendered_image,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
