@@ -436,6 +436,7 @@ class GaussianModel_exr:
         self._features_dc = torch.empty(0)
         self._features_rest = torch.empty(0)
         self._scaling = torch.empty(0)
+        self._scaling_init = torch.empty(0)
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
         self.max_radii2D = torch.empty(0)
@@ -506,6 +507,13 @@ class GaussianModel_exr:
         return self.opacity_activation(self._opacity)
     
     @property
+    def get_mask(self):
+        return self._mask
+    
+    def set_mask(self,mask):
+        self._mask = torch.tensor(mask.reshape(-1,1)).float().to('cuda')
+    
+    @property
     def get_minimum_axis(self):
         return get_minimum_axis(self.get_scaling, self.get_rotation)
     
@@ -530,6 +538,7 @@ class GaussianModel_exr:
         scales = torch.log(torch.sqrt(dist2))[...,None].repeat(1, 3)
         
         
+        
         rots = torch.zeros((fused_point_cloud.shape[0], 4), device="cuda")
         rots[:, 0] = 1
 
@@ -539,6 +548,7 @@ class GaussianModel_exr:
         self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True)) # diffuse color
         self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True)) # residual
         self._scaling = nn.Parameter(scales.requires_grad_(True))
+        self._scaling_init = torch.exp(scales)
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
@@ -599,6 +609,7 @@ class GaussianModel_exr:
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
         # All channels except the 3 DC
+        
         if self.brdf:
             l.extend(['nx2', 'ny2', 'nz2'])
         for i in range(self._features_dc.shape[1] * self._features_dc.shape[2]):
@@ -610,6 +621,7 @@ class GaussianModel_exr:
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
+        
         return l
 
     def save_ply(self, path):
@@ -638,19 +650,26 @@ class GaussianModel_exr:
         # rgb_exr = SH2RGB(f_dc)
         
         # rgb_png = np.clip(np.power(np.clip(rgb_exr,1e-5,None),0.45),0,1)
+        ng = 512
         
-        
-        f_dc_png = np.clip(SH2RGB(f_dc),0,1).reshape(256,256,3)
-        np.save(os.path.join(folder,'pos_map.npy'),xyz.reshape(256,256,3))
-        np.save(os.path.join(folder,'rot_map.npy'),rotation.reshape(256,256,4))
-        np.save(os.path.join(folder,'scale_map.npy'),scale.reshape(256,256,3))
-        np.save(os.path.join(folder,'opa_map.npy'),opacities.reshape(256,256,1))
-        # np.save(os.path.join(folder,'f_rest_map.npy'),f_rest.reshape(256,256,45))
-        np.save(os.path.join(folder,'diff_map.npy'),f_dc.reshape(256,256,3))
+        f_dc_png = np.clip(SH2RGB(f_dc),0,1).reshape(ng,ng,3)
+        scale_map = scale.reshape(ng,ng,3)
+        scale_map = (scale_map - scale_map.min()) / (scale_map.max() - scale_map.min())
+        scale_map_np = np.exp(scale).reshape(ng,ng,3)
+        scale_map_np = (scale_map_np - scale_map_np.min()) / (scale_map_np.max() - scale_map_np.min())
+        scale_exp = self._scaling_init.cpu().numpy()
+        np.save(os.path.join(folder,'pos_map.npy'),xyz.reshape(ng,ng,3))
+        np.save(os.path.join(folder,'rot_map.npy'),rotation.reshape(ng,ng,4))
+        np.save(os.path.join(folder,'scale_map.npy'),scale.reshape(ng,ng,3))
+        np.save(os.path.join(folder,'opa_map.npy'),opacities.reshape(ng,ng,1))
+        # np.save(os.path.join(folder,'f_rest_map.npy'),f_rest.reshape(ng,ng,45))
+        np.save(os.path.join(folder,'diff_map.npy'),f_dc.reshape(ng,ng,3))
         imwrite(os.path.join(folder,'diffuse.png'),(f_dc_png*255).astype('uint8'))
+        imwrite(os.path.join(folder,'scale.png'),(scale_map*255).astype('uint8'))
+        imwrite(os.path.join(folder,'scale_exp.png'),(scale_map_np*255).astype('uint8'))
         if self.brdf:
-            np.save(os.path.join(folder,'normals.npy'),normals.reshape(256,256,3))
-            np.save(os.path.join(folder,'normals2.npy'),normals2.reshape(256,256,3))
+            np.save(os.path.join(folder,'normals.npy'),normals.reshape(ng,ng,3))
+            np.save(os.path.join(folder,'normals2.npy'),normals2.reshape(ng,ng,3))
             
             attributes = np.concatenate((xyz, normals, normals2, f_dc, f_rest, opacities, scale, rotation), axis=1)
         else:

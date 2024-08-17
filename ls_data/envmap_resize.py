@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument("--points", default="transforms.json", help="output path")
     parser.add_argument("--output", default="transforms.json", help="output path")
     parser.add_argument("--input", default="", help="specify calib file location")
-    
+    parser.add_argument("--median", default="transforms.json", help="output path")
     args = parser.parse_args()
     return args
 
@@ -68,9 +68,13 @@ if __name__ == '__main__':
         envmap = imread(os.path.join(args.input,file))
         envmap_name = (file).split('.')[0]
         envmap_resize = cv2.resize(envmap,(512,256),interpolation=cv2.INTER_AREA)
-       
-        envmap_resize = envmap_resize * 10
-        med = np.median(envmap_resize)
+        envmap_median = np.median(imread(args.median))
+
+        # envmap_resize = envmap_resize * 10
+        # med = np.median(envmap_resize)
+        envmap_resize_med = np.median(envmap_resize)
+        print(envmap_median,envmap_resize_med)
+        envmap_resize = (envmap_resize/envmap_resize_med)*envmap_median 
         
         imwrite(os.path.join(args.output+'/exr/',f'{envmap_name}.exr'),envmap_resize.astype('float32'))
         imwrite(f'{args.output}/png/{envmap_name}.png',(np.clip(np.power(envmap_resize,0.45),0,1)*255).astype('uint8'))

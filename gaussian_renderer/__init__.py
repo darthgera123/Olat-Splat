@@ -52,9 +52,10 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    means3D = pc.get_xyz
+    mask = pc.get_mask
+    means3D = pc.get_xyz * mask
     means2D = screenspace_points
-    opacity = pc.get_opacity
+    opacity = pc.get_opacity * mask
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
@@ -84,8 +85,14 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             
     else:
         colors_precomp = override_color
-    print("SHS",shs.shape)
+    # print("SHS",shs.shape)
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
+    ng = 256
+    diff = pc._features_dc
+    diff = diff.reshape(ng,ng,3)
+    dt = diff[:,:,:3].reshape(-1,1,3)
+    
+    df = dt.transpose(1,2).flatten(start_dim=1).contiguous()
     rendered_image, radii = rasterizer(
         means3D = means3D,
         means2D = means2D,
@@ -128,7 +135,9 @@ def render(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Tensor, 
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
             "radii": radii,
-            "alpha_img":alpha_img}
+            "alpha_img":alpha_img,
+            "scales":scales,
+            "diffuse":df}
 
 
 def render_spec(viewpoint_camera, pc, pipe, bg_color: torch.Tensor, mlp_color,

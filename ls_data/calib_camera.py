@@ -5,7 +5,7 @@ import numpy as np
 from tqdm import tqdm
 import json
 import cv2
-
+import copy
 from imageio.v2 import imread,imwrite
 import math
 import open3d as o3d
@@ -386,7 +386,7 @@ if __name__ == '__main__':
         geo = transformed_vertices[:, :3] / transformed_vertices[:, 3, np.newaxis] #(N,3)
         
         
-        sample_x,sample_y = 256,256
+        sample_x,sample_y = 512,512
         uvheight, uvwidth = texsize,texsize #4096x4096
         stridey = uvheight // sample_x #sampling frequenc will set points
         stridex = uvwidth // sample_y
@@ -488,7 +488,12 @@ if __name__ == '__main__':
         
         
         for ind in test_indices:
-            frames.append(transforms['frames'][ind])
+            if not args.create_alpha:
+                frame_copy = copy.deepcopy(transforms['frames'][ind])
+                frame_copy['file_path'] = os.path.join(args.img_path,f'Cam_{str(ind).zfill(2)}')
+                frames.append(frame_copy)
+            else:
+                frames.append(transforms['frames'][ind])
         transforms_test["frames"] = frames
         
         save_json(transforms_test,os.path.join(args.output,'transforms_test.json'))
@@ -500,7 +505,12 @@ if __name__ == '__main__':
         for ind in range(0,len(transforms['frames'])):
             if ind in test_indices:
                 continue
-            frames.append(transforms['frames'][ind])
+            if not args.create_alpha:
+                frame_copy = copy.deepcopy(transforms['frames'][ind])
+                frame_copy['file_path'] = os.path.join(args.img_path,f'Cam_{str(ind).zfill(2)}')
+                frames.append(frame_copy)
+            else:
+                frames.append(transforms['frames'][ind])
         
         transforms_train["frames"] = frames
         if args.create_lights:

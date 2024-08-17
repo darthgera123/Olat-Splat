@@ -318,12 +318,27 @@ class Scene_exr:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
+            print(os.path.join(args.source_path, "mask.png"))
+            if os.path.exists(os.path.join(args.mask_path, "mask.png")):
+                from imageio.v2 import imread
+                mask = imread(os.path.join(args.mask_path, "mask.png"))/255.0
+                self.gaussians.set_mask(mask)
         elif self.load_init:
+            print("hello")
             self.gaussians.load_ply(self.load_init)
-            self.gaussians.freeze_positions()
+            # self.gaussians.freeze_positions()
             print("Load Initialized point cloud")
+            if os.path.exists(os.path.join(args.mask_path, "mask.png")):
+                from imageio.v2 import imread
+                mask = imread(os.path.join(args.mask_path, "mask.png"))/255.0
+                self.gaussians.set_mask(mask)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+            print(os.path.join(args.mask_path, "mask.png"))
+            if os.path.exists(os.path.join(args.mask_path, "mask.png")):
+                from imageio.v2 import imread
+                mask = imread(os.path.join(args.mask_path, "mask.png"))/255.0
+                self.gaussians.set_mask(mask)
 
     def save(self, iteration):
         point_cloud_path = os.path.join(self.model_path, "point_cloud/iteration_{}".format(iteration))

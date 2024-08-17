@@ -334,7 +334,18 @@ def mask_and_sample_points(vt, tidxim, colors, stridey, stridex):
     sampled_colors = np.array(sampled_colors)
 
     return sampled_points, sampled_colors
-
+def generate_ply_mask(baryim, stridey, stridex):
+    # Extract the barycentric coordinates for the sampled points
+    sampled_barycoords = baryim[stridey//2::stridey, stridex//2::stridex]
+    
+    # Determine if the barycentric coordinates correspond to a point within the triangle
+    # This is true if all barycentric coordinates are greater than 0
+    mask = np.all(sampled_barycoords > 0, axis=-1)
+    
+    # Convert the boolean mask to a mask with values [1,1,1] or [0,0,0]
+    ply_mask = np.where(mask[:, :, None], 1, 0)
+    
+    return ply_mask
 
 
 if __name__ == '__main__':
@@ -422,7 +433,11 @@ if __name__ == '__main__':
 
         ply_save = os.path.join(args.output,'points3d.ply')
         img_save = os.path.join(args.output,'texture.png')
+        ply_mask = generate_ply_mask(barim, stridey, stridex)
+        ply_mask=ply_mask.reshape(sample_x*sample_y,1)
+        mask_save = os.path.join(args.output,'mask.png')
         imwrite(img_save,(ply_colors.reshape(sample_x,sample_y,3)*255).astype('uint8'))
+        cv2.imwrite(mask_save,(ply_mask.reshape(sample_x,sample_y,1)*255).astype('uint8'))
         storePly(ply_save,ply_vertex,(ply_colors*255).astype('uint8'))
         # some spurious points also coming clean manually?
     else:
@@ -448,11 +463,16 @@ if __name__ == '__main__':
     #                     "9C4A0137-73c0813158"  ]
     # test_env_maps = ["9C4A0003-e05009bcad","9C4A0120-0fd27f2a38"]
         
-    with open('envmap.txt', 'r') as file:
+    # with open('envmap.txt', 'r') as file:
+    # # Read all lines from the file and store them in a list
+    #     lines = [line.strip() for line in file]
+    # train_env_maps = lines[0:10]
+    # test_env_maps = lines[0:10] + lines[500:510]
+    with open('envmap_unet_2.txt', 'r') as file:
     # Read all lines from the file and store them in a list
         lines = [line.strip() for line in file]
-    train_env_maps = lines[0:500]
-    test_env_maps = lines[0:10] + lines[1000:1002]
+    train_env_maps = lines[320:321]
+    test_env_maps = lines[320:321]
     
     # if args.create_lights:
     #     lights = {}
@@ -493,10 +513,13 @@ if __name__ == '__main__':
             for ind in test_indices:
                 for env in test_env_maps:
                     
+                    uv_path = f"/scratch/inf0/user/pgera/FlashingLights/3dgs/envmap_mask_max/output/sunrise_pullover/pose_01/{env}/point_cloud/iteration_20000"
+
                     frame_copy = copy.deepcopy(transforms['frames'][ind])
         
                     frame_copy['file_path'] = os.path.join(args.img_path, env, f'images/Cam_{str(ind).zfill(2)}')
-                    frame_copy['envmap'] = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/med_exr', env + '.exr')
+                    frame_copy['envmap'] = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/3dgs/exr_unet', env + '.exr')
+                    frame_copy['uvmap'] = os.path.join(uv_path,'diffuse.png')
                     frames.append(frame_copy)
                     
             transforms_test["frames"] = frames
@@ -511,11 +534,12 @@ if __name__ == '__main__':
                 if ind in test_indices:
                     continue
                 for env in train_env_maps:
-                    
+                    uv_path = f"/scratch/inf0/user/pgera/FlashingLights/3dgs/envmap_mask_max/output/sunrise_pullover/pose_01/{env}/point_cloud/iteration_20000"
                     frame_copy = copy.deepcopy(transforms['frames'][ind])
         
                     frame_copy['file_path'] = os.path.join(args.img_path, env, f'images/Cam_{str(ind).zfill(2)}')
-                    frame_copy['envmap'] = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/med_exr', env + '.exr')
+                    frame_copy['envmap'] = os.path.join('/CT/LS_BRM03/nobackup/indoor_envmap/3dgs/exr_unet', env + '.exr')
+                    frame_copy['uvmap'] = os.path.join(uv_path,'diffuse.png')
                     frames.append(frame_copy)
             
             transforms_train["frames"] = frames
