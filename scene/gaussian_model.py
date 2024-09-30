@@ -650,7 +650,7 @@ class GaussianModel_exr:
         # rgb_exr = SH2RGB(f_dc)
         
         # rgb_png = np.clip(np.power(np.clip(rgb_exr,1e-5,None),0.45),0,1)
-        ng = 512
+        ng = 256
         
         f_dc_png = np.clip(SH2RGB(f_dc),0,1).reshape(ng,ng,3)
         scale_map = scale.reshape(ng,ng,3)
